@@ -34,7 +34,10 @@ namespace AromaShooterUdpBridge
 		private readonly SettingsForm form;
 		private readonly NotifyIcon tray;
 		private readonly System.Windows.Forms.Timer showTimer;
+		private readonly System.Windows.Forms.Timer statusTimer;
+		private readonly ToolStripMenuItem statusItem;
 		private readonly Icon icon;
+		private Color? statusColor;
 		private bool exiting, disposed;
 
 		internal SettingsForm SettingsWindow => form;
@@ -55,8 +58,12 @@ namespace AromaShooterUdpBridge
 			using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("AromaShooterUdpBridge.Assets.tray.ico")) icon = new Icon(stream);
 			form.Icon = icon;
 			var menu = new ContextMenuStrip(components);
-			var statusItem = (ToolStripMenuItem)menu.Items.Add("設定・状態", null, (s, e) => ShowSettings());
+			statusItem = (ToolStripMenuItem)menu.Items.Add("設定・状態", null, (s, e) => ShowSettings());
 			menu.Opening += (s, e) => UpdateStatusDot(statusItem);
+			statusTimer = new System.Windows.Forms.Timer(components) { Interval = 500 };
+			statusTimer.Tick += (s, e) => UpdateStatusDot(statusItem);
+			menu.Opened += (s, e) => statusTimer.Start();
+			menu.Closed += (s, e) => statusTimer.Stop();
 			menu.Items.Add("全停止", null, (s, e) => host.SubmitText("STOP ALL"));
 			menu.Items.Add("再接続", null, async (s, e) => await form.Run(host.Reconnect));
 			menu.Items.Add("終了", null, async (s, e) => await Exit());
@@ -78,6 +85,7 @@ namespace AromaShooterUdpBridge
 			string error = log.LastError;
 			Color color = !string.IsNullOrEmpty(error) && error != "なし" ? Color.FromArgb(210, 50, 50)
 					: host.Engine.Known.Length > 0 ? Color.FromArgb(34, 150, 83) : Color.FromArgb(156, 163, 175);
+			if (statusColor.HasValue && statusColor.Value == color) return;
 			var bitmap = new Bitmap(16, 16);
 			using (var g = Graphics.FromImage(bitmap))
 			using (var brush = new SolidBrush(color))
@@ -85,7 +93,7 @@ namespace AromaShooterUdpBridge
 				g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 				g.FillEllipse(brush, 3, 3, 10, 10);
 			}
-			var old = item.Image; item.Image = bitmap; old?.Dispose();
+			var old = item.Image; item.Image = bitmap; old?.Dispose(); statusColor = color;
 		}
 		private void ShowSettings() { if (!exiting) { form.Show(); form.WindowState = FormWindowState.Normal; form.Activate(); } }
 		internal async Task Exit()
@@ -97,7 +105,7 @@ namespace AromaShooterUdpBridge
 		}
 		protected override void Dispose(bool disposing)
 		{
-			if (disposing && !disposed) { disposed = true; components.Dispose(); form.Dispose(); icon.Dispose(); log.Dispose(); }
+			if (disposing && !disposed) { disposed = true; statusTimer.Stop(); statusItem.Image?.Dispose(); components.Dispose(); form.Dispose(); icon.Dispose(); log.Dispose(); }
 			base.Dispose(disposing);
 		}
 	}
