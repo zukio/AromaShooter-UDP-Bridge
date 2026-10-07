@@ -4,11 +4,7 @@ AromaShooter UDP Bridge は、UDPで受信した噴射・停止指示をAromaSho
 
 ## Installation
 
-最新の[Release](https://github.com/your-repo/AromaShooter-UDP-Bridge/releases)をダウンロードしてください。
-
-- この配布設定はWindows x64向けです。
-- アプリは機器のドライバーをインストールしません。
-- SDKのDLLとNuGet依存関係はアプリに含まれます。
+最新の[Release](https://github.com/your-repo/AromaShooter-UDP-Bridge/releases)からダウンロードしてください。Windows x64向けです。
 
 ## Usage
 
@@ -76,12 +72,12 @@ JSONを外部編集した場合は、設定画面の「設定を再読み込み�
 ### 噴射
 
 ```text
-SHOOT <対象> <チャンバー> <噴射長ms> [強度]
+SHOOT <対象デバイス> <チャンバー> <噴射長ms> [強度]
 ```
 
 ```text
 SHOOT ALL 1 3000
-SHOOT ALL 1,3 3000
+SHOOT ALL 1,2,3,4,5,6 3000
 SHOOT ALL 1,3 3000 50,80
 SHOOT ASN3A01192 2 1500 70
 ```
