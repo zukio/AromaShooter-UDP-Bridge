@@ -4,8 +4,9 @@ AromaShooter UDP Bridge は、UDPで受信した噴射・停止指示をAromaSho
 
 ## Installation
 
-最新の[Release](https://github.com/your-repo/AromaShooter-UDP-Bridge/releases)をダウンロードしてください。この配布設定はWindows x64向けです。
+最新の[Release](https://github.com/your-repo/AromaShooter-UDP-Bridge/releases)をダウンロードしてください。
 
+- この配布設定はWindows x64向けです。
 - アプリは機器のドライバーをインストールしません。
 - SDKのDLLとNuGet依存関係はアプリに含まれます。
 
@@ -68,7 +69,7 @@ JSONを外部編集した場合は、設定画面の「設定を再読み込み�
 
 ## UDPコマンド
 
-プレーンテキストのUTF-8 UDPです。OSCではありません。1データグラムにつき1コマンドを送信します。応答やACKはありません。最大1024バイトで、コマンド間に改行やタブを入れないでください。
+プレーンテキストのUTF-8 UDPです。1データグラムにつき1コマンドを送信します。応答やACKはありません。最大1024バイトで、コマンド間に改行やタブを入れないでください。
 
 ### 噴射
 
