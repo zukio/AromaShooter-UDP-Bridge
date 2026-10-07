@@ -12,6 +12,8 @@ AromaShooter UDP Bridge は、UDPで受信した噴射・停止指示をAromaSho
 
 ## Usage
 
+![](src/Assets/UI.png)
+
 1. ZIPを展開し、`AromaShooterUdpBridge.exe`を起動します。
 2. 初回は設定ファイルが作成され、設定画面が表示されます。タスクトレイからも設定画面を開けます。
 3. 接続方式をUSBまたはBLEに設定し、必要に応じてUDP待受IP・ポートを変更して「適用して保存」を押します。
