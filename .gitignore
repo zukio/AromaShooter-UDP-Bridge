@@ -1,0 +1,7 @@
+
+# .NET / Visual Studio
+**/bin/
+**/obj/
+.vs/
+*.user
+lib/AromaShooterWindowsSDK.dll
