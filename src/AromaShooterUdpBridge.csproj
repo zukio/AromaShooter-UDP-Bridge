@@ -1,20 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net472</TargetFramework>
-    <LangVersion>7.3</LangVersion>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>AromaShooterUdpBridge</AssemblyName>
-    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <ApplicationIcon>Assets\tray.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="System.Windows.Forms" />
-    <Reference Include="System.Drawing" />
     <Reference Include="AromaShooterWindowsSDK">
       <HintPath>..\lib\net472\AromaShooterWindowsSDK.dll</HintPath>
       <Private>true</Private>
     </Reference>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="System.IO.Ports" Version="10.0.0" />
     <EmbeddedResource Include="Assets\tray.ico" />
     <Content Include="..\licenses\*"><Link>licenses\%(Filename)%(Extension)</Link><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
     <Content Include="..\settings.example.json"><Link>settings.example.json</Link><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>

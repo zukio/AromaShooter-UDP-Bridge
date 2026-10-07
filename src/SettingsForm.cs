@@ -32,6 +32,7 @@ namespace AromaShooterUdpBridge
 		private string editVersion;
 		private string[] displayedDevices = new string[0];
 		private string lastLog;
+		[System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
 		public bool AllowClose { get; set; }
 
 		public SettingsForm(BridgeHost host)
@@ -88,13 +89,18 @@ namespace AromaShooterUdpBridge
 			reload.Margin = defaults.Margin = new Padding(0, 7, 10, 7); save.Margin = Padding.Empty;
 			var footer = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 18, 0, 0), Margin = Padding.Empty };
 			footer.Controls.Add(save); footer.Controls.Add(defaults); footer.Controls.Add(reload);
-			var folderLink = new LinkLabel {
-				Text = "設定フォルダーを開く", AutoSize = true,
-				Anchor = AnchorStyles.Left, Margin = new Padding(0, 18, 16, 0),
-				LinkColor = Color.FromArgb(82, 92, 106), ActiveLinkColor = Color.FromArgb(37, 99, 180),
+			var folderLink = new LinkLabel
+			{
+				Text = "設定フォルダーを開く",
+				AutoSize = true,
+				Anchor = AnchorStyles.Left,
+				Margin = new Padding(0, 18, 16, 0),
+				LinkColor = Color.FromArgb(82, 92, 106),
+				ActiveLinkColor = Color.FromArgb(37, 99, 180),
 				LinkBehavior = LinkBehavior.HoverUnderline
 			};
-			folderLink.LinkClicked += async (s, e) => await Run(() => {
+			folderLink.LinkClicked += async (s, e) => await Run(() =>
+			{
 				string folder = Path.GetDirectoryName(host.Store.Path);
 				Directory.CreateDirectory(folder);
 				Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true });
@@ -130,7 +136,8 @@ namespace AromaShooterUdpBridge
 			deviceGroup.Margin = new Padding(0, 0, 16, 0); errorGroup.Margin = Padding.Empty;
 			statusRow.Controls.Add(status); statusRow.Controls.Add(deviceGroup); statusRow.Controls.Add(errorGroup);
 			body.Controls.Add(statusRow);
-			body.SizeChanged += (s, e) => {
+			body.SizeChanged += (s, e) =>
+			{
 				int width = Math.Max(1, body.ClientSize.Width - 50);
 				status.MaximumSize = deviceStatus.MaximumSize = errorStatus.MaximumSize = new Size(width, 0);
 			};
