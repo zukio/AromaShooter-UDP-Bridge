@@ -5,6 +5,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>AromaShooterUdpBridge</AssemblyName>
     <ApplicationIcon>Assets\tray.ico</ApplicationIcon>
+    <Platforms>AnyCPU;x64</Platforms>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="AromaShooterWindowsSDK">
