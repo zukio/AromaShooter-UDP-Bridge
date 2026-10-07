@@ -4,4 +4,4 @@
 **/obj/
 .vs/
 *.user
-lib/AromaShooterWindowsSDK.dll
+lib/*/AromaShooterWindowsSDK.dll

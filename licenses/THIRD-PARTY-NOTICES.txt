@@ -1,0 +1,15 @@
+AromaShooter UDP Bridge third-party components
+
+AromaShooterWindowsSDK.dll
+Source: https://github.com/aromajoin/aromashooter-sdk-windows
+SDK documentation version: 3.0.0
+License: Apache-2.0 (AromaShooterSDK-LICENSE.txt)
+Copied without modification from the supplied aromashooter-sdk-windows-main/lib/net472 distribution.
+The supplied SDK repository has a LICENSE file and no separate NOTICE file.
+
+Newtonsoft.Json 13.0.3
+Copyright (c) 2007 James Newton-King
+License: MIT (Newtonsoft.Json-LICENSE.md)
+Restored from the Newtonsoft.Json NuGet package.
+
+Tray framework and tray.ico are reused from the company's supplied trayIconAppTemplate.

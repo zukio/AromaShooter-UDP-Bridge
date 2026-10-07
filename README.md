@@ -17,7 +17,7 @@ UDPで受け取ったコマンドに従い、[AromaShooter](https://aromajoin.co
 1. AromaShooterを接続し、電源を入れます。
 2. AromaShooterUdpBridge.exeを起動します。
 3. タスクトレイのアイコンをダブルクリックして設定画面を開きます。
-4. 接続方式USB/BLEとUDP受信ポートを設定し、［保存して適用］を押します。
+4. 接続方式USB/BLEとUDP受信ポートを設定し、［適用して保存］を押します。
 5. ［再接続］で機器を検出し、表示されたシリアル番号を確認します。
 6. テスト操作で対象、チャンバー、噴射長を選び、噴射を確認します。
 7. 外部ソフトから本アプリのPCのIPアドレスとUDPポートへコマンドを送信します。
@@ -32,14 +32,17 @@ UDPで受け取ったコマンドに従い、[AromaShooter](https://aromajoin.co
 | 設定・状態           | 設定、接続一覧、受信ログ、テスト操作を表示   |
 | 全停止               | 接続中の全機器を停止。待機中の噴射指示も取消 |
 | 再接続               | 選択した接続方式で再検出・接続               |
-| 設定を再読み込み     | 外部編集したsettings.jsonを反映              |
-| 設定フォルダーを開く | 設定とログの保存先を表示                     |
 | 終了                 | 受信を停止し、機器を停止・切断して終了       |
 
 ## 設定
 
+設定ウィンドウ左下の［設定フォルダーを開く］リンクで、設定とログの保存先を開けます。［設定を再読み込み］はウィンドウ右下から操作します。
+
 初期UDPポートは10000、接続方式はUSBです。
+待受IPはこのPC側の受信インターフェースを指定するもので、送信元IPの許可リストではありません。
 待受アドレス0.0.0.0は別PCからの受信にも対応します。同じPCだけなら127.0.0.1へ変更できます。
+
+画面はライト基調です。［詳細設定］にチャンバー既定強度・内部/外部ブースター、［テスト］にテスト操作をまとめ、初期状態では折りたたみます。見出しをクリックすると開閉できます。右上の矢印アイコンは再接続です。下部右側に［設定を再読み込み］［リセット］［適用して保存］を配置し、［適用して保存］を強調しています。［リセット］は確認後に既定値を保存・適用します。
 
 チャンバー1〜6にそれぞれ既定強度を設定できます。UDPで強度を省略したときに使用する値です。
 設定や接続だけでは噴射しません。設定変更は次の噴射から有効です。
@@ -185,11 +188,33 @@ SHOOTの再送は噴射の再開始になります。停止はトレイの［全
 実装仕様はdocs/SPEC.md、Codexの作業指示はAGENTS.mdを参照してください。
 SDKの公式READMEとサンプル：<https://github.com/aromajoin/aromashooter-sdk-windows>
 
-実装時はlib/net472/AromaShooterWindowsSDK.dllを配置し、.NET Framework 4.7.2開発ツールを備えたWindowsで次のコマンドが実行できる構成にします。
+公式配布のlib/net472/AromaShooterWindowsSDK.dllを同じ相対パスへ配置してください（DLLは既存の.gitignoreによりGit管理対象外）。Visual Studio 2022の.NETデスクトップ開発、.NET Framework 4.7.2開発ツール、.NET SDK 8を備えたWindowsで、リポジトリルートから実行します。global.jsonはビルド用SDK 8を選択しますが、アプリの実行対象は.NET Framework 4.7.2です。
 
 ```powershell
 msbuild .\AromaShooterUdpBridge.sln /restore /p:Configuration=Release
 ```
 
-自動テストの具体的な実行コマンド、配布フォルダー、USB/BLE実機検証結果は、実装時にここへ追記してください。
-現時点ではビルド・実機試験とも未実施です。
+Developer PowerShell以外では、同じソリューションを`dotnet build .\AromaShooterUdpBridge.sln -c Release`でもビルドできます。Newtonsoft.Json 13.0.3はNuGetから復元されます。
+
+自動テスト（外部テストランナー不要、失敗時は終了コード1）：
+
+```powershell
+.\tests\bin\Release\net472\AromaShooterUdpBridge.Tests.exe
+.\tests\bin\Release\net472\AromaShooterUdpBridge.Tests.exe --ui
+```
+
+`--ui`はWindowsの対話セッションで実行してください。一時的に設定画面とトレイアイコンを表示し、二重起動通知・画面を閉じた後の常駐・トレイ終了を検証します。両テストとも一時フォルダーの設定と模擬SDKを使用し、通常の設定ファイルや実機を操作しません。テストの一時フォルダーは出力に表示します。
+
+配布物は`src/bin/Release/net472/`です。このフォルダーのexe、exe.config、AromaShooterWindowsSDK.dll、Newtonsoft.Json.dll、licenses/を一緒に配布してください。settings.example.jsonは参照例であり、実際の設定保存先は常にLocalAppDataです。
+
+構成：
+
+- `src/Protocol.cs`：UTF-8とUDPコマンドの検証。
+- `src/ControlEngine.cs`、`src/Device.cs`：直列制御、STOP優先、公式SDKアダプター。
+- `src/Settings.cs`、`src/BridgeHost.cs`：厳密な設定検証、原子的保存、待受切替と復旧。
+- `src/UdpListener.cs`、`src/BridgeLog.cs`：UDP受信、直近500件・日別7日分のログ。
+- `src/Program.cs`、`src/SingleInstance.cs`、`src/SettingsForm.cs`：トレイ常駐、単一起動、設定UI。
+
+社内のtrayIconAppTemplateからNotifyIcon・ContextMenuStrip・コンポーネント所有の構成とアイコンを流用しました。.NET 6固有の起動処理は.NET Framework用に変更し、ApplicationContextが終了処理を管理します。元テンプレートは変更していません。
+
+2026-10-07：Releaseビルド成功（警告0・エラー0）。制御・設定・UDPの64チェックとUIの5チェックが成功しました。公式DLLのAPIシグネチャは照合済みです。USB/BLEの接続・実噴射・自動停止・最大噴射長・抜線・実機終了時停止は未検証です。詳細は[検証記録](docs/VERIFICATION.md)を参照してください。

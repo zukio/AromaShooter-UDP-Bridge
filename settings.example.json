@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "udp": { "listenAddress": "0.0.0.0", "port": 10000 },
+  "device": { "transport": "USB", "autoConnect": true },
+  "shoot": {
+    "defaultIntensities": [100, 100, 100, 100, 100, 100],
+    "internalBoosterIntensity": 100,
+    "externalBoosterIntensity": 0
+  }
+}
