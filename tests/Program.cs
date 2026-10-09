@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using AromaShooterUdpBridge;
+using Newtonsoft.Json.Linq;
 
 internal static class Program
 {
@@ -15,9 +16,9 @@ internal static class Program
 	private static void Check(bool value, string label) { if (!value) throw new Exception("FAIL: " + label); passed++; Console.WriteLine("PASS: " + label); }
 	private static void Reject(Action action, string label) { try { action(); } catch { Check(true, label); return; } Check(false, label); }
 	private static Command Parse(string value) => Command.Parse(Encoding.UTF8.GetBytes(value));
-	private static async Task Until(Func<bool> predicate)
+	private static async Task Until(Func<bool> predicate, int attempts = 500)
 	{
-		for (int i = 0; i < 500; i++) { if (predicate()) return; await Task.Delay(10); }
+		for (int i = 0; i < attempts; i++) { if (predicate()) return; await Task.Delay(10); }
 		throw new TimeoutException("Timed out waiting for worker");
 	}
 	[STAThread]
@@ -38,11 +39,21 @@ internal static class Program
 		Reject(() => Command.Parse(new byte[] { 0xff, 0xfe }), "invalid UTF-8");
 		Reject(() => Command.Parse(new byte[1025]), "oversized datagram");
 		string json = new Settings().ToJson();
-		Check(Settings.Parse(json).Internal == 100, "settings round trip");
+		Check(Settings.Parse(json).Internal == 100 && Settings.Parse(json).ShowWindowOnStartup,
+			"settings v2 round trip defaults to showing startup window");
+		var legacyJson = JObject.Parse(json);
+		legacyJson["schemaVersion"] = 1;
+		((JObject)legacyJson["device"]).Remove("showWindowOnStartup");
+		Check(Settings.Parse(legacyJson.ToString()).ShowWindowOnStartup,
+			"settings v1 migrates with startup window visible by default");
+		var hiddenSettings = new Settings { ShowWindowOnStartup = false };
+		Check(!Settings.Parse(hiddenSettings.ToJson()).ShowWindowOnStartup,
+			"startup window can be disabled in settings");
 		foreach (string invalid in new[] { json.Replace("10000", "\"10000\""), json.Replace("10000", "10000.0"), json.Replace("10000", "65536"),
-						json.Replace("schemaVersion", "unknown"), json.Replace("\"schemaVersion\": 1", "\"schemaVersion\": 2"),
+						json.Replace("schemaVersion", "unknown"), json.Replace("\"schemaVersion\": 2", "\"schemaVersion\": 3"),
 						json.Replace("\"internalBoosterIntensity\": 100", "\"internalBoosterIntensity\": 0"), json.Replace("USB", "OSC"),
-						json.Replace("\"schemaVersion\": 1", "\"schemaVersion\": 1, \"schemaVersion\": 1"), json.Replace("true", "\"true\"") })
+						json.Replace("\"schemaVersion\": 2", "\"schemaVersion\": 2, \"schemaVersion\": 2"), json.Replace("true", "\"true\""),
+						json.Replace("\"showWindowOnStartup\": true", "\"showWindowOnStartup\": \"true\"") })
 			Reject(() => Settings.Parse(invalid), "invalid settings schema/type/range");
 
 		var fake = new Fake(); var errors = new List<string>();
@@ -87,6 +98,22 @@ internal static class Program
 		Check(!fake.Events.Any(x => x.StartsWith("SHOOT A")), "A stop failure prevents A shoot, B continues");
 		fake.FailDisconnect = true; await engine.Shutdown(); Check(fake.Events.Contains("DISCONNECT"), "shutdown continues after stop/disconnect failure");
 
+		var scanFake = new Fake { ConnectWithoutDevices = true }; var scanLogs = new List<string>();
+		var scanEngine = new ControlEngine(scanFake, (m, e) => { lock (scanLogs) scanLogs.Add(m); });
+		await scanEngine.Reconnect("USB");
+		Check(scanEngine.Known.Length == 0 && scanFake.ConnectCount == 1, "empty initial scan leaves no devices connected");
+		scanFake.BlockNextConnect();
+		Check(scanEngine.TryQueueAutoScan("USB"), "empty-state auto scan queued");
+		await Until(() => scanFake.ConnectEntered.IsSet);
+		Check(!scanEngine.TryQueueAutoScan("USB"), "auto scan is not queued while a scan is running");
+		scanFake.ConnectWithoutDevices = false; scanFake.ConnectRelease.Set();
+		await Until(() => scanEngine.Known.Length == 2);
+		Check(scanFake.ConnectCount == 2 && scanFake.MaxConcurrentConnects == 1, "auto scan discovers devices without overlapping connects");
+		Check(scanLogs.Count(x => x.Contains("自動検出: A, B")) == 1, "auto scan logs discovery without logging empty retries");
+		scanEngine.UpdateSettings(new Settings { AutoConnect = false });
+		Check(!scanEngine.TryQueueAutoScan("USB"), "disabled auto-connect also disables periodic scanning");
+		await scanEngine.Shutdown();
+
 		string folder = Path.Combine(Path.GetTempPath(), "AromaBridgeTests-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(folder);
 		var store = new SettingsStore(Path.Combine(folder, "settings.json"));
 		var settings = new Settings { Address = "127.0.0.1", Port = FreePort(), AutoConnect = false };
@@ -130,6 +157,25 @@ internal static class Program
 			await host.Shutdown(); Check(host.UdpState == "待受停止", "shutdown releases listener");
 			using (var rebound = new UdpListener(next.Address, next.Port)) Check(true, "port released after shutdown");
 		}
+		string scanFolder = Path.Combine(Path.GetTempPath(), "AromaBridgeAutoScan-" + Guid.NewGuid().ToString("N"));
+		Directory.CreateDirectory(scanFolder);
+		var scanStore = new SettingsStore(Path.Combine(scanFolder, "settings.json"));
+		scanStore.Save(new Settings { Address = "127.0.0.1", Port = FreePort(), AutoConnect = true }, null, false);
+		var periodicFake = new Fake { ConnectWithoutDevices = true };
+		using (var scanLog = new BridgeLog(Path.Combine(scanFolder, "logs")))
+		{
+			var scanHost = new BridgeHost(scanStore, periodicFake, scanLog);
+			await scanHost.Start();
+			Check(scanHost.Engine.Known.Length == 0 && periodicFake.ConnectCount == 0,
+				"host initializes listener without waiting for initial device scan");
+			await scanHost.ConnectAtStartup();
+			Check(scanHost.Engine.Known.Length == 0 && periodicFake.ConnectCount == 1, "startup connection runs separately from initialization");
+			periodicFake.ConnectWithoutDevices = false;
+			await Until(() => scanHost.Engine.Known.Length == 2, 700);
+			Check(periodicFake.ConnectCount == 2 && scanLog.Snapshot().Any(x => x.Contains("USB 自動検出: A, B")),
+				"host automatically rescans after the empty-state interval");
+			await scanHost.Shutdown();
+		}
 		Console.WriteLine("Test artifacts: " + folder);
 	}
 	private static int FreePort() { using (var udp = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0))) return ((IPEndPoint)udp.Client.LocalEndPoint).Port; }
@@ -138,7 +184,7 @@ internal static class Program
 		string key = "Local\\AromaBridgeTest-" + Guid.NewGuid().ToString("N");
 		using (var instance = new SingleInstance(key))
 		{
-			var start = new System.Diagnostics.ProcessStartInfo(System.Reflection.Assembly.GetExecutingAssembly().Location, "--signal " + key)
+			var start = new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath, "--signal " + key)
 			{ UseShellExecute = false, CreateNoWindow = true };
 			using (var child = System.Diagnostics.Process.Start(start))
 			{
@@ -147,8 +193,13 @@ internal static class Program
 		}
 		string folder = Path.Combine(Path.GetTempPath(), "AromaBridgeUiTests-" + Guid.NewGuid().ToString("N"));
 		var store = new SettingsStore(Path.Combine(folder, "settings.json"));
-		store.Save(new Settings { Address = "127.0.0.1", Port = FreePort(), AutoConnect = true }, null, false);
+		store.Save(new Settings { Address = "127.0.0.1", Port = FreePort(), AutoConnect = true, ShowWindowOnStartup = true }, null, false);
+		var legacyStartupSettings = JObject.Parse(File.ReadAllText(store.Path));
+		legacyStartupSettings["schemaVersion"] = 1;
+		((JObject)legacyStartupSettings["device"]).Remove("showWindowOnStartup");
+		File.WriteAllText(store.Path, legacyStartupSettings.ToString());
 		var fake = new Fake();
+		fake.BlockNextConnect();
 		var host = new BridgeHost(store, fake, new BridgeLog(Path.Combine(folder, "logs")));
 		System.Windows.Forms.Application.EnableVisualStyles();
 		System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
@@ -163,18 +214,27 @@ internal static class Program
 				try
 				{
 					if (DateTime.UtcNow > deadline) throw new TimeoutException("UI test timed out");
-					if (stage == 0 && host.Current != null && host.Engine.Known.Length == 2)
+					if (stage == 0 && host.Current != null && host.Connecting && fake.ConnectEntered.IsSet)
 					{
-						Check(!context.SettingsWindow.Visible && context.TrayIcon.Visible, "normal startup shows tray only");
-						show.Set(); stage = 1;
+						Check(context.SettingsWindow.Visible && context.TrayIcon.Visible,
+							"startup window is visible while device scan is still blocked");
+						Check(host.UdpState.StartsWith("待受中"), "UDP listener is ready while device scan is still blocked");
+						fake.ConnectRelease.Set();
+						stage = 1;
 					}
-					else if (stage == 1 && context.SettingsWindow.Visible)
+					else if (stage == 1 && context.SettingsWindow.Visible && host.Engine.Known.Length == 2)
 					{
-						Check(true, "instance notification opens settings window");
+						Check(true, "startup-window setting shows settings window on every startup");
 						var window = context.SettingsWindow;
 						var advanced = window.Controls.Find("詳細設定Content", true).Single();
 						var testPanel = window.Controls.Find("テストContent", true).Single();
 						Check(!advanced.Visible && !testPanel.Visible, "advanced and test sections initially collapsed");
+						var reconnect = (System.Windows.Forms.Button)window.Controls.Find("Reconnect", true).Single();
+						Check(reconnect.Padding == System.Windows.Forms.Padding.Empty &&
+							reconnect.TextAlign == System.Drawing.ContentAlignment.MiddleCenter,
+							"reconnect icon is centered with symmetric button padding");
+						Check(((System.Windows.Forms.CheckBox)window.Controls.Find("ShowWindowOnStartup", true).Single()).Checked,
+							"startup-window checkbox reflects visible startup setting");
 						using (var bitmap = new System.Drawing.Bitmap(window.Width, window.Height))
 						{
 							window.DrawToBitmap(bitmap, new System.Drawing.Rectangle(System.Drawing.Point.Empty, window.Size));
@@ -193,9 +253,15 @@ internal static class Program
 						Console.WriteLine("UI previews: " + folder);
 						context.SettingsWindow.Close();
 						Check(!context.SettingsWindow.Visible && !context.SettingsWindow.IsDisposed && context.TrayIcon.Visible, "settings close returns to tray");
-						fake.Clear(); stage = 2;
+						show.Set(); fake.Clear(); stage = 2;
 					}
 					else if (stage == 2)
+					{
+						if (!context.SettingsWindow.Visible) return;
+						Check(true, "instance notification opens settings window");
+						stage = 3;
+					}
+					else if (stage == 3)
 					{
 						timer.Stop(); context.TrayIcon.ContextMenuStrip.Items[context.TrayIcon.ContextMenuStrip.Items.Count - 1].PerformClick();
 					}
@@ -215,11 +281,39 @@ internal static class Program
 		public string[] Events { get { lock (gate) return events.ToArray(); } }
 		public readonly ManualResetEventSlim Entered = new ManualResetEventSlim(), Release = new ManualResetEventSlim();
 		private bool block, connected;
+		private int blockConnect, activeConnects, connectCount, maxConcurrentConnects;
 		public string FailStop; public bool FailDisconnect;
+		private int connectWithoutDevices;
+		public bool ConnectWithoutDevices
+		{
+			get { return Volatile.Read(ref connectWithoutDevices) != 0; }
+			set { Volatile.Write(ref connectWithoutDevices, value ? 1 : 0); }
+		}
 		public void Clear() { lock (gate) events.Clear(); }
 		private void Add(string s) { lock (gate) events.Add(s); }
 		public void BlockNextShoot() { Entered.Reset(); Release.Reset(); block = true; }
-		public Task Connect(string transport) { connected = true; return Task.CompletedTask; }
+		public int ConnectCount => Volatile.Read(ref connectCount);
+		public int MaxConcurrentConnects => Volatile.Read(ref maxConcurrentConnects);
+		public readonly ManualResetEventSlim ConnectEntered = new ManualResetEventSlim(), ConnectRelease = new ManualResetEventSlim();
+		public void BlockNextConnect() { ConnectEntered.Reset(); ConnectRelease.Reset(); Interlocked.Exchange(ref blockConnect, 1); }
+		public async Task Connect(string transport)
+		{
+			Interlocked.Increment(ref connectCount);
+			int active = Interlocked.Increment(ref activeConnects);
+			int observed;
+			while (active > (observed = Volatile.Read(ref maxConcurrentConnects)) &&
+				Interlocked.CompareExchange(ref maxConcurrentConnects, active, observed) != observed) { }
+			try
+			{
+				if (Interlocked.Exchange(ref blockConnect, 0) == 1)
+				{
+					ConnectEntered.Set();
+					await Task.Run(() => ConnectRelease.Wait());
+				}
+				if (!ConnectWithoutDevices) connected = true;
+			}
+			finally { Interlocked.Decrement(ref activeConnects); }
+		}
 		public int StopToShootDelayMs { get; set; }
 		public string[] Devices() => connected ? new[] { "A", "B" } : new string[0];
 		public void Stop(string serial) { Add("STOP " + serial); if (FailStop == serial) throw new Exception("test stop failure"); }

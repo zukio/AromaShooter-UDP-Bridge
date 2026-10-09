@@ -77,8 +77,14 @@ namespace AromaShooterUdpBridge
 			};
 			form.BeginInvoke(new Action(async () =>
 			{
-				bool visible = await host.Start(); form.LoadSettings(); if (visible || log.LastError != "なし") ShowSettings();
+				await host.Start(); form.LoadSettings();
+				if (ShouldShowSettingsAtStartup(host.Current, log.LastError)) ShowSettings();
+				await host.ConnectAtStartup();
 			}));
+		}
+		internal static bool ShouldShowSettingsAtStartup(Settings settings, string lastError)
+		{
+			return settings == null || settings.ShowWindowOnStartup || lastError != "なし";
 		}
 		private void UpdateStatusDot(ToolStripMenuItem item)
 		{

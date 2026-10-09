@@ -15,6 +15,7 @@ namespace AromaShooterUdpBridge
 		private readonly NumericUpDown port = Number(1, 65535, 10000);
 		private readonly ComboBox transport = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 80 };
 		private readonly CheckBox auto = new CheckBox { Text = "起動時自動接続", AutoSize = true };
+		private readonly CheckBox showWindowOnStartup = new CheckBox { Text = "起動時に設定画面を表示", AutoSize = true, Name = "ShowWindowOnStartup" };
 		private readonly NumericUpDown[] levels = Enumerable.Range(0, 6).Select(_ => Number(0, 100, 100)).ToArray();
 		private readonly NumericUpDown internalLevel = Number(1, 100, 100), externalLevel = Number(0, 100, 0);
 		private readonly ComboBox target = new ComboBox { Width = 180, DropDownStyle = ComboBoxStyle.DropDownList };
@@ -48,11 +49,9 @@ namespace AromaShooterUdpBridge
 			root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 			root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 			root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); Controls.Add(root);
-			reconnect = Button("⟳", host.Reconnect);
+			reconnect = new ReconnectButton();
 			reconnect.Name = "Reconnect"; reconnect.AccessibleName = "再接続";
-			reconnect.AutoSize = false; reconnect.MinimumSize = Size.Empty; reconnect.Size = new Size(40, 40);
-			reconnect.Padding = Padding.Empty; reconnect.Margin = Padding.Empty;
-			reconnect.Font = new Font("Segoe UI Symbol", 19F); reconnect.FlatAppearance.BorderSize = 0;
+			reconnect.Click += async (s, e) => await Run(host.Reconnect);
 			hints.SetToolTip(reconnect, "再接続 — 機器を停止・切断して再検出");
 			var header = new TableLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, ColumnCount = 2, Margin = new Padding(0, 0, 0, 16) };
 			header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -66,7 +65,9 @@ namespace AromaShooterUdpBridge
 			address.Width = 190; port.Width = 100; transport.Width = 110;
 			body.Controls.Add(Row(Field("待受IP（このPC）", address), Field("UDPポート", port), Field("接続方式", transport)));
 			// body.Controls.Add(new Label { Text = "0.0.0.0：すべてのネットワーク  /  127.0.0.1：このPCのみ", AutoSize = true, ForeColor = Color.FromArgb(100, 108, 119), Margin = new Padding(0, 2, 0, 0) });
-			auto.Margin = new Padding(0, 12, 0, 4); body.Controls.Add(auto);
+			auto.Margin = new Padding(0, 12, 16, 4);
+			showWindowOnStartup.Margin = new Padding(0, 12, 0, 4);
+			body.Controls.Add(Row(auto, showWindowOnStartup));
 			var advanced = new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Top, ColumnCount = 1, Padding = new Padding(12, 8, 0, 10) };
 			var strength = Row();
 			for (int i = 0; i < 6; i++) strength.Controls.Add(Field("Ch " + (i + 1), levels[i]));
@@ -152,6 +153,36 @@ namespace AromaShooterUdpBridge
 			LoadSettings();
 		}
 		private static Label Label(string text) => new Label { Text = text, AutoSize = true, Margin = new Padding(0, 0, 0, 6) };
+		private sealed class ReconnectButton : Button
+		{
+			public ReconnectButton()
+			{
+				AutoSize = false; MinimumSize = Size.Empty; Size = new Size(40, 40);
+				Padding = Padding.Empty; Margin = Padding.Empty;
+				FlatStyle = FlatStyle.Flat; BackColor = Color.White;
+				FlatAppearance.BorderColor = Color.FromArgb(220, 224, 230);
+				FlatAppearance.BorderSize = 1;
+			}
+			protected override void OnPaint(PaintEventArgs e)
+			{
+				base.OnPaint(e);
+				const float diameter = 18F;
+				float left = (ClientSize.Width - diameter) / 2F;
+				float top = (ClientSize.Height - diameter) / 2F;
+				var bounds = new RectangleF(left, top, diameter, diameter);
+				e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+				using (var pen = new Pen(Color.FromArgb(55, 65, 81), 2F))
+				{
+					e.Graphics.DrawArc(pen, bounds, 45F, 290F);
+					e.Graphics.DrawLines(pen, new[]
+					{
+						new PointF(left + 14F, top + 1F),
+						new PointF(left + 18F, top + 1F),
+						new PointF(left + 17F, top + 5F)
+					});
+				}
+			}
+		}
 		private static Control Field(string title, Control input)
 		{
 			var field = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(0, 0, 20, 6) };
@@ -199,7 +230,8 @@ namespace AromaShooterUdpBridge
 		public void LoadSettings()
 		{
 			Settings settings = host.Current ?? new Settings();
-			address.Text = settings.Address; port.Value = settings.Port; transport.SelectedItem = settings.Transport; auto.Checked = settings.AutoConnect;
+			address.Text = settings.Address; port.Value = settings.Port; transport.SelectedItem = settings.Transport;
+			auto.Checked = settings.AutoConnect; showWindowOnStartup.Checked = settings.ShowWindowOnStartup;
 			for (int i = 0; i < 6; i++) levels[i].Value = settings.Intensities[i];
 			internalLevel.Value = settings.Internal; externalLevel.Value = settings.External;
 			editVersion = host.Version;
@@ -221,6 +253,7 @@ namespace AromaShooterUdpBridge
 				Port = (int)port.Value,
 				Transport = (string)transport.SelectedItem,
 				AutoConnect = auto.Checked,
+				ShowWindowOnStartup = showWindowOnStartup.Checked,
 				Intensities = levels.Select(n => (int)n.Value).ToArray(),
 				Internal = (int)internalLevel.Value,
 				External = (int)externalLevel.Value
@@ -234,7 +267,7 @@ namespace AromaShooterUdpBridge
 			status.Text = "UDP " + host.UdpState;
 			deviceDot.ForeColor = devices.Length == 0 ? Color.FromArgb(156, 163, 175) : Color.FromArgb(34, 150, 83);
 			deviceStatus.Text = (host.Current?.Transport ?? "設定エラー") + " · 検出機器" +
-				(devices.Length == 0 ? "なし" : ": " + string.Join(", ", devices));
+				(devices.Length == 0 ? host.Connecting ? "接続中…" : "なし" : ": " + string.Join(", ", devices));
 			string lastError = host.Log.LastError;
 			bool hasError = !string.IsNullOrEmpty(lastError) && lastError != "なし";
 			errorDot.ForeColor = Color.FromArgb(210, 50, 50);

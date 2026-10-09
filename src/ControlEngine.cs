@@ -27,7 +27,7 @@ namespace AromaShooterUdpBridge
 		private Settings settings = new Settings();
 		private string[] known = new string[0];
 		private Work active;
-		private bool accepting, quitting, shutdownRequested;
+		private bool accepting, quitting, shutdownRequested, autoScanQueued;
 		public string[] Known { get { lock (gate) return (string[])known.Clone(); } }
 		public int PendingCount { get { lock (gate) return pending.Count; } }
 
@@ -37,6 +37,50 @@ namespace AromaShooterUdpBridge
 			worker = Task.Run(Run);
 		}
 		public void UpdateSettings(Settings value) { lock (gate) settings = value.Clone(); }
+		public bool TryQueueAutoScan(string transport)
+		{
+			lock (gate)
+			{
+				if (shutdownRequested || known.Length != 0 || !settings.AutoConnect ||
+					settings.Transport != transport || autoScanQueued) return false;
+				autoScanQueued = true;
+				maintenance.Enqueue(() => ScanWithoutDisconnect(transport));
+				signal.Release();
+				return true;
+			}
+		}
+
+		private async Task ScanWithoutDisconnect(string transport)
+		{
+			bool started = false;
+			try
+			{
+				lock (gate)
+				{
+					if (shutdownRequested || known.Length != 0 || !settings.AutoConnect ||
+						settings.Transport != transport) return;
+					started = true;
+				}
+				await device.Connect(transport).ConfigureAwait(false);
+			}
+			catch (Exception e) { log(transport + " 自動検出失敗: " + e.Message, true); }
+			finally
+			{
+				if (started)
+				{
+					string[] detected = ReadDevices();
+					bool changed;
+					lock (gate)
+					{
+						changed = !known.SequenceEqual(detected, StringComparer.Ordinal);
+						known = detected;
+					}
+					if (changed && detected.Length != 0)
+						log(transport + " 自動検出: " + string.Join(", ", detected), false);
+				}
+				lock (gate) autoScanQueued = false;
+			}
+		}
 
 		public bool Submit(Command command, string source)
 		{

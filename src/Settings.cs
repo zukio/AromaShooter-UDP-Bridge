@@ -16,6 +16,7 @@ namespace AromaShooterUdpBridge
 		public int Port = 10000;
 		public string Transport = "USB";
 		public bool AutoConnect = true;
+		public bool ShowWindowOnStartup = true;
 		public int[] Intensities = { 100, 100, 100, 100, 100, 100 };
 		public int Internal = 100;
 		public int External;
@@ -26,6 +27,7 @@ namespace AromaShooterUdpBridge
 			Port = Port,
 			Transport = Transport,
 			AutoConnect = AutoConnect,
+			ShowWindowOnStartup = ShowWindowOnStartup,
 			Intensities = (int[])Intensities.Clone(),
 			Internal = Internal,
 			External = External
@@ -47,9 +49,14 @@ namespace AromaShooterUdpBridge
 			Validate();
 			return new JObject
 			{
-				["schemaVersion"] = 1,
+				["schemaVersion"] = 2,
 				["udp"] = new JObject { ["listenAddress"] = Address, ["port"] = Port },
-				["device"] = new JObject { ["transport"] = Transport, ["autoConnect"] = AutoConnect },
+				["device"] = new JObject
+				{
+					["transport"] = Transport,
+					["autoConnect"] = AutoConnect,
+					["showWindowOnStartup"] = ShowWindowOnStartup
+				},
 				["shoot"] = new JObject
 				{
 					["defaultIntensities"] = new JArray(Intensities),
@@ -63,12 +70,17 @@ namespace AromaShooterUdpBridge
 		{
 			var root = JObject.Parse(json, new JsonLoadSettings { DuplicatePropertyNameHandling = DuplicatePropertyNameHandling.Error });
 			Keys(root, "schemaVersion", "udp", "device", "shoot");
-			if (Integer(root["schemaVersion"]) != 1) throw new FormatException("未対応のschemaVersionです。");
+			int schemaVersion = Integer(root["schemaVersion"]);
+			if (schemaVersion != 1 && schemaVersion != 2) throw new FormatException("未対応のschemaVersionです。");
 			var udp = root["udp"] as JObject; Keys(udp, "listenAddress", "port");
-			var device = root["device"] as JObject; Keys(device, "transport", "autoConnect");
+			var device = root["device"] as JObject;
+			if (schemaVersion == 1) Keys(device, "transport", "autoConnect");
+			else Keys(device, "transport", "autoConnect", "showWindowOnStartup");
 			var shoot = root["shoot"] as JObject; Keys(shoot, "defaultIntensities", "internalBoosterIntensity", "externalBoosterIntensity");
 			if (udp["listenAddress"].Type != JTokenType.String || device["transport"].Type != JTokenType.String ||
-					device["autoConnect"].Type != JTokenType.Boolean || shoot["defaultIntensities"].Type != JTokenType.Array)
+					device["autoConnect"].Type != JTokenType.Boolean ||
+					(schemaVersion == 2 && device["showWindowOnStartup"].Type != JTokenType.Boolean) ||
+					shoot["defaultIntensities"].Type != JTokenType.Array)
 				throw new FormatException("設定の型が不正です。");
 			var result = new Settings
 			{
@@ -76,6 +88,7 @@ namespace AromaShooterUdpBridge
 				Port = Integer(udp["port"]),
 				Transport = (string)device["transport"],
 				AutoConnect = (bool)device["autoConnect"],
+				ShowWindowOnStartup = schemaVersion == 1 || (bool)device["showWindowOnStartup"],
 				Intensities = ((JArray)shoot["defaultIntensities"]).Select(Integer).ToArray(),
 				Internal = Integer(shoot["internalBoosterIntensity"]),
 				External = Integer(shoot["externalBoosterIntensity"])
